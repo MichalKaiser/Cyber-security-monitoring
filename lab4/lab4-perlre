@@ -1,0 +1,89 @@
+# Match characters between the first two occurrences of the "00" string --
+# lazy quantifier *? ensures that we will fetch characters only up to the
+# second "00" and not to the last one:
+
+00(.*?)00
+
+# Match characters between the last two occurrences of the "00" string --
+# since the expression starts with .*, greedy quantifier * forces .* to 
+# match as many characters as possible, and therefore the following
+# 00(.*)00 will match the last two occurrences of "00" and characters 
+# between them:
+
+.*00(.*)00
+
+# Match SSH login failure events both for existing and non-existing
+# users, so that SSH login failures from host 127.0.0.1 or from
+# privileged ports (0..1023) would be ignored. After relevant events
+# have been matched, set $1 match variable to SSH process ID, $2
+# variable to username, $3 variable to IP address of the remote host
+# and $4 variable to port number of remote host.
+# Note that although negative lookahead does not set a match variable,
+# the capture group inside negative lookahead does, and therefore
+# (?: ) construct has to be used inside negative lookahead!
+
+sshd\[(\d+)\]: Failed password for (?:invalid user )?(\S+) from (?!127\.0\.0\.1 )([\d.]+) port (?!(?:\d{1,3}|10[01]\d|102[0-3]) )(\d+)
+
+# the previous expression can be tested with the following commandline
+
+pcre2grep -O '$1 $2 $3 $4' 'sshd\[(\d+)\]: Failed password for (?:invalid user )?(\S+) from (?!127\.0\.0\.1 )([\d.]+) port (?!(?:\d{1,3}|10[01]\d|102[0-3]) )(\d+)' /var/log/secure*
+
+# an alternative expression for matching the port number without lookahead --
+# instead of verifying that the port number is not falling into range 0..1023,
+# this solution verifies that the port number is 1024 or greater
+
+sshd\[(\d+)\]: Failed password for (?:invalid user )?(\S+) from (?!127\.0\.0\.1 )([\d.]+) port (\d{5}|[2-9]\d{3}|1[1-9]\d{2}|10[3-9]\d|102[4-9])\s
+
+# Match the string which begins with a sequence of letters which is not
+# followed by 99.
+# It is tempting to begin with an expression:
+# ^([a-z]+)(?!99)
+# In other words, match a sequence of letters and use negative lookahead 
+# (?!99) for verifying that 99 does not follow the sequence. Unfortunately,
+# this will not work due to backtracking. 
+# For example, if the string is "abc99", then after [a-z]+ has matched "abc"
+# and overall match has failed, the engine will backtrack and [a-z]+ matches
+# "ab". However, since the sequence "ab" is not followed by 99 but rather
+# "c99", an overall match is achieved.
+# In order to avoid backtracking, [a-z]+ has to be rewritten:
+
+^([a-z]++)(?!99)
+
+# Extract a double-quoted substring from the string, allowing for escaped
+# double-quotes inside extracted substring.
+#
+# solution which employs negative lookbehind
+# negative lookbehind (?<!\\) is used for making sure that \ does not 
+# precede the closing double-quote
+
+"(.*?)(?<!\\)"
+
+# solution which employs possessive quantifier
+#
+# [^"] - matches any character that is not double-quote
+# \\"  - matches a backshash that is followed by " character
+#
+# We could begin with "(([^"]|\\")*)" but this fails to match \" properly, 
+# since [^"] comes before \\" in the alternation and always matches \"
+# When we swap parts of the alternation, we will get
+# "((\\"|[^"])*)"
+# Unfortunately, this mistakenly matches strings without terminating double-
+# quote, if there is escaped double-quote present, e.g.:
+# aaa"bbb\"ccc  will set $1 to bbb\
+# This due to backtracking -- when terminating " is not found, the engine
+# moves back, until it discovers escaped double-quote. Since \" was
+# originally matched by the first part of the alternation, the engine now
+# tries the second part that is still unexplored. Since [^"] matches \,
+# the engine moves forward, and since the following " does not match
+# the whole alternation, but rather the following ", then an overall match
+# has been achieved.
+# In order to avoid backtracking, we must rewrite (\\"|[^"])* as
+# (\\"|[^"])*+ , and the resulting expression is:
+
+"((\\"|[^"])*+)"
+
+In order to allow escaping the backslash itself with a backslash, so that
+the expression would consider the string "abc\\" valid and set $1 to abc\\,
+the expression could be rewritten as:
+
+"((\\.|[^"])*+)"
